@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Images Accessibility Checker",
+  "description": "The extension allows users to get the alt attribute for all images on the site",
+  "version": "1.0",
+    "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  }
+}

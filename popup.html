@@ -1,0 +1,37 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image checker</title>
+    <style>
+      #get-data {
+        border: none;
+        background-color: #06f;
+        border-radius: 10px;
+        width: 175px;
+        padding: 5px 8px;
+        font-weight: 500;
+        color: #fff;
+        font-size: 14px;
+      }
+
+      #get-data:hover {
+        cursor: pointer;
+        background-color: rgb(0, 54, 134);
+        transition: background-color 0.25s ease-in-out;
+      }
+
+      #get-data:disabled {
+        pointer-events: none;
+        background-color: rgb(83, 152, 255);
+      }
+    </style>
+  </head>
+  <body>
+    <button id="get-data">
+      Retrieve information about the accessibility of images
+    </button>
+    <div id="container"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
