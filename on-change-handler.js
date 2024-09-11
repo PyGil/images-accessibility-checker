@@ -106,8 +106,8 @@ const renderTable = async () => {
                               pageLink + "?image-url=" + src
                             }" target="_bank">Go to the image</a>
                         </td>
-                        <td style="border: 1px solid #000; padding: 10px; max-width: 380px;" contenteditable="true" oninput="onInputHandler(this, ${pageIndex}, ${ImageIndex})">
-                            ${note}
+                        <td style="border: 1px solid #000; padding: 10px; max-width: 380px;">
+                            <span style="outline: none;" contenteditable="true" oninput="onInputHandler(this, ${pageIndex}, ${ImageIndex})">${note}</span>
                         </td>
                         <td style="border: 1px solid #000; padding: 10px;">
                             <input style="display: block; margin: auto" type="checkbox" ${
