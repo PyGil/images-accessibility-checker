@@ -2,6 +2,11 @@ document.addEventListener("dataFromExternalScript", ({ detail }) => {
   chrome.runtime.sendMessage(detail);
 });
 
+const { host, pathname } = window.location;
+const urlKey = `${host}${pathname}`;
+
+chrome.storage.local.remove(urlKey);
+
 const customStyles = `
   .image-checker-scroll-button {
     border: none;
@@ -49,7 +54,9 @@ const scrollToImageFromQuery = () => {
   scrollToImageButton.textContent = "Scroll to the image";
   scrollToImageButton.classList.add("image-checker-scroll-button");
 
-  scrollToImageButton.addEventListener("click", () => scrollToElement(image, -outlineWidth));
+  scrollToImageButton.addEventListener("click", () =>
+    scrollToElement(image, -outlineWidth)
+  );
 
   document.body.appendChild(scrollToImageButton);
 

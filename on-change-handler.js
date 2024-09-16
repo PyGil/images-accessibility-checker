@@ -1,4 +1,6 @@
 const parser = new DOMParser();
+const { host, pathname } = window.location;
+const dataStorageKey = `image-checker::${host}${pathname}::data`;
 
 const getHtmlFromString = (htmlString) =>
   parser.parseFromString(htmlString, "text/html");
@@ -42,12 +44,12 @@ const getImageData = async (link) => {
       })),
     };
   } catch (error) {
-    console.log("error", error);
+    console.error("error", error?.message);
   }
 };
 
 const getImagesData = async (links) => {
-  const cashedData = localStorage.getItem("image-checker::data");
+  const cashedData = localStorage.getItem(dataStorageKey);
 
   if (cashedData) {
     return JSON.parse(cashedData);
@@ -57,9 +59,21 @@ const getImagesData = async (links) => {
 
   const filteredData = imagesData.filter((data) => !!data);
 
-  localStorage.setItem("image-checker::data", JSON.stringify(filteredData));
+  localStorage.setItem(dataStorageKey, JSON.stringify(filteredData));
 
   return filteredData;
+};
+
+const getTableRowBackground = (isChecked, imageIndex) => {
+  if (isChecked) {
+    return "#dfffdf";
+  }
+
+  if (!(imageIndex % 2)) {
+    return "#f9f9f9";
+  }
+
+  return "";
 };
 
 const renderTable = async () => {
@@ -69,11 +83,11 @@ const renderTable = async () => {
 
   const data = await getImagesData(links.slice(0, 20));
 
-  document.body.innerHTML = data
+  const table = data
     .map(
       ({ pageLink, pageTitle, images }, pageIndex) => `
-        <table style="border-collapse: collapse; margin-bottom: 40px; width: 800px; padding: 0 40px; display: block; box-sizing: content-box;">
-            <caption style="border: 1px solid #000; border-radius: 6px 6px 0 0; padding: 10px; text-align: left;">
+        <table style="border-collapse: collapse; margin-bottom: 40px; table-layout: fixed;">
+            <caption style="border-radius: 6px 6px 0 0; text-align: left;">
                 <div style="margin-bottom: 6px">
                   <span style="font-weight: 600">Page Title: </span>${pageTitle}
                 </div>
@@ -83,69 +97,144 @@ const renderTable = async () => {
             </caption>
             <thead>
                 <tr>
-                <th style="border: 1px solid #000; width: 400px">Image</th>
-                <th style="border: 1px solid #000; width: 185px">Alt</th>
-                <th style="border: 1px solid #000;">Actions</th>
-                <th style="border: 1px solid #000; width: 400px;">Note</th>
-                <th style="border: 1px solid #000;">Checked</th>
+                <th style="width: 400px">Image</th>
+                <th style="width: 185px">Alt</th>
+                <th style="width: 400px;">Note</th>
+                <th>Actions</th>
+                <th>Checked</th>
                 </tr>
             </thead>
             <tbody>
                 ${images
                   .map(
-                    ({ src, alt, note, isChecked }, ImageIndex) => `
-                    <tr ${isChecked ? 'style="background-color: green;"' : ""}>
-                        <td style="border: 1px solid #000;">
+                    ({ src, alt, note, isChecked }, imageIndex) => `
+                    <tr style="background-color: ${getTableRowBackground(
+                      isChecked,
+                      imageIndex
+                    )};">
+                        <td>
                             <img src=${src} alt="${alt}" width=400 />
                         </td>
-                        <td style="border: 1px solid #000; padding: 10px">
+                        <td>
                             ${alt}
                         </td>
-                        <td style="border: 1px solid #000; padding: 10px">
+                        <td 
+                          style="outline: none; vertical-align: top; max-width: 400px;"
+                          id="note-${pageIndex}-${imageIndex}"
+                          contenteditable="true" 
+                          oninput="onInputHandler(${pageIndex}, ${imageIndex})"
+                        >
+                          ${note}
+                        </td>
+                        <td>
                             <a href="${
                               pageLink + "?image-url=" + src
-                            }" target="_bank">Go to the image</a>
+                            }" target="_bank" class="action-button">
+                              Go to the image
+                            </a>
+                            <button
+                              disabled
+                              class="action-button" 
+                              onclick="saveNoteHandler(this, ${pageIndex}, ${imageIndex})"
+                              id="save-note-button-${pageIndex}-${imageIndex}"
+                            >
+                              Save the note
+                            </button>
                         </td>
-                        <td style="border: 1px solid #000; padding: 10px; max-width: 380px;">
-                            <span style="outline: none;" contenteditable="true" oninput="onInputHandler(this, ${pageIndex}, ${ImageIndex})">${note}</span>
-                        </td>
-                        <td style="border: 1px solid #000; padding: 10px;">
+                        <td>
                             <input style="display: block; margin: auto" type="checkbox" ${
                               isChecked ? "checked" : ""
-                            } onchange="onChangeHandler(this, ${pageIndex}, ${ImageIndex})" />
+                            } onchange="onChangeHandler(this, ${pageIndex}, ${imageIndex})" />
                         </td>
                     </tr>
                 `
                   )
                   .join("")}
             </tbody>
-        </table>
-`
+        </table>`
     )
     .join("");
 
-  let timeoutId;
+  document.body.innerHTML = `
+   <style>
+    th, td, caption {
+      border: 1px solid #ddd;
+    }
 
-  window.onInputHandler = (element, pageIndex, ImageIndex) => {
-    clearTimeout(timeoutId);
+    td:not(:first-child), caption, th {
+      padding: 10px;
+    }
 
-    timeoutId = setTimeout(() => {
-      data[pageIndex].images[ImageIndex].note = element.innerHTML;
+    th {
+      font-weight: 600; 
+    }
 
-      localStorage.setItem("image-checker::data", JSON.stringify(data));
-    }, 2000);
+    .action-button {
+      display: block;
+      border: none;
+      background-color: #06f;
+      border-radius: 10px;
+      width: 160px;
+      padding: 5px 8px;
+      font-weight: 500;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      text-align: center;
+      transition: background-color 0.25s ease-in-out;
+    }
+
+    .action-button:hover {
+      background-color: rgb(0, 54, 134);
+    }
+
+    .action-button:disabled {
+      pointer-events: none;
+      background-color: rgb(83, 152, 255);
+    }
+
+    .action-button:last-child {
+      margin-top: 10px;
+    }
+
+    .action-button.success {
+      background-color: rgb(0, 165, 0);
+    }
+  </style>
+  <div style="width: fit-content; margin: 0 auto; padding: 16px 0;">
+    ${table}
+  <div>`;
+
+  window.onInputHandler = (pageIndex, imageIndex) => {
+    const saveNoteButton = document.getElementById(
+      `save-note-button-${pageIndex}-${imageIndex}`
+    );
+    saveNoteButton.disabled = false;
+    saveNoteButton.textContent = "Save the note";
+    saveNoteButton.classList.remove("success");
   };
 
-  window.onChangeHandler = (element, pageIndex, ImageIndex) => {
+  window.saveNoteHandler = (button, pageIndex, imageIndex) => {
+    const note = document.getElementById(`note-${pageIndex}-${imageIndex}`);
+
+    data[pageIndex].images[imageIndex].note = note.innerHTML;
+
+    localStorage.setItem(dataStorageKey, JSON.stringify(data));
+
+    button.disabled = true;
+    button.textContent = "Saved ✓";
+    button.classList.add("success");
+  };
+
+  window.onChangeHandler = (element, pageIndex, imageIndex) => {
     const isChecked = element.checked;
 
-    data[pageIndex].images[ImageIndex].isChecked = isChecked;
+    data[pageIndex].images[imageIndex].isChecked = isChecked;
 
-    localStorage.setItem("image-checker::data", JSON.stringify(data));
+    localStorage.setItem(dataStorageKey, JSON.stringify(data));
 
-    element.parentElement.parentElement.style.backgroundColor = isChecked
-      ? "green"
-      : "transparent";
+    element.parentElement.parentElement.style.backgroundColor =
+      getTableRowBackground(isChecked, imageIndex);
   };
 };
 
