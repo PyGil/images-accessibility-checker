@@ -3,9 +3,10 @@ document.addEventListener("dataFromExternalScript", ({ detail }) => {
 });
 
 const { host, pathname } = window.location;
-const urlKey = `${host}${pathname}`;
+const path = pathname.replace(/\/$/, "");
+const generalStateKey = `${host}${path}::general`;
 
-chrome.storage.local.remove(urlKey);
+chrome.storage.local.remove(generalStateKey);
 
 const customStyles = `
   .image-checker-scroll-button {
@@ -34,9 +35,19 @@ const scrollToElement = (element, offset = 0) =>
   });
 
 const scrollToImageFromQuery = () => {
+  const { pathname: imagePathname, search: imageSearch } = new URL(imageURL);
+
   const image =
     document.querySelector(`img[src="${imageURL}"]`) ||
-    document.querySelector(`img[src="${new URL(imageURL).pathname}"]`);
+    document.querySelector(`img[src^="${imagePathname}${imageSearch}"]`);
+
+  console.log(
+    "image",
+    image,
+    new URL(imageURL),
+    `${imagePathname}${imageSearch}`,
+    imageURL
+  );
 
   if (!image) {
     return;
@@ -64,6 +75,8 @@ const scrollToImageFromQuery = () => {
 };
 
 const imageURL = new URLSearchParams(window.location.search).get("image-url");
+
+console.log(window.location.search)
 
 if (imageURL) {
   scrollToImageFromQuery();
