@@ -10,7 +10,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["on-change-handler.js"],
+      "resources": ["actions-script.js"],
       "matches": ["<all_urls>"]
     }
   ],
