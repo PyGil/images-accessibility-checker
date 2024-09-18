@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Image checker</title>
     <style>
-      #get-data {
+      .action-button {
         border: none;
         background-color: #06f;
         border-radius: 10px;
@@ -17,19 +17,29 @@
         transition: background-color 0.25s ease-in-out;
       }
 
-      #get-data:hover {
+      .action-button:hover {
         background-color: rgb(0, 54, 134);
       }
 
-      #get-data:disabled {
+      .action-button:disabled {
         pointer-events: none;
         background-color: rgb(83, 152, 255);
+      }
+
+      .action-button:not(:first-child) {
+        margin-top: 6px;
+      }
+
+      #clear-cash {
+        width: 100px;
+        margin: 10px 0 0;
       }
     </style>
   </head>
   <body>
-    <button id="get-data">Use a sitemap</button>
-    <div id="container"></div>
+      <button id="use-sitemap" class="action-button">Use sitemap</button>
+      <button id="use-page" class="action-button">Use the page</button>
+      <button id="clear-cash" class="action-button" disabled>Clear cash</button>
     <script src="popup.js"></script>
   </body>
 </html>
