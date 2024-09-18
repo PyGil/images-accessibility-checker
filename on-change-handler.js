@@ -1,11 +1,60 @@
 const parser = new DOMParser();
 const { host, pathname } = window.location;
-const dataStorageKey = `image-checker::${host}${pathname}::data`;
+const path = pathname.replace(/\/$/, "");
+const dataStorageKey = `image-checker::${host}${path}::data`;
+const failedButtonText = "Mark as failed";
+const unmarkFailedButtonText = "Unmark as failed";
+
+const action = document
+  .querySelector("script[data-action]")
+  ?.getAttribute("data-action");
 
 const getHtmlFromString = (htmlString) =>
   parser.parseFromString(htmlString, "text/html");
 
+const delay = async (time) =>
+  new Promise((resolve) => setTimeout(resolve, time));
+
+const dispatchDataFromExternalScript = () => {
+  const dataFromExternalScript = new CustomEvent("dataFromExternalScript", {
+    detail: { tableAction: action },
+  });
+
+  document.dispatchEvent(dataFromExternalScript);
+};
+
+const getImagesDataFromDocument = (
+  currentDocument = document,
+  link = window.location.href
+) => {
+  const images = Array.from(currentDocument.querySelectorAll("img"));
+
+  if (!images.length) {
+    return;
+  }
+
+  const pageTitle = currentDocument
+    .getElementsByTagName("title")[0]
+    .text.replace(/(\n|\t)/gi, "");
+
+  return {
+    pageTitle,
+    pageLink: link,
+    images: images.map((image) => ({
+      src: image.src,
+      alt: image.alt,
+      note: image.hasAttribute(image.alt)
+        ? ""
+        : "This image has no  alt attribute at all. Neither with en empty string nor without a value. Even if the image is just decorative, you should add an alt attribute to the image with an empty value. Otherwise, screen readers may read incorrect information and potentially confuse some users.",
+      isChecked: false,
+      isFailed: false,
+    })),
+  };
+};
+
 const getImageData = async (link) => {
+  await delay(450);
+
   try {
     const response = await fetch(link, { mode: "no-cors" });
 
@@ -21,30 +70,10 @@ const getImageData = async (link) => {
 
     const htmlString = await response.text();
     const currentDocument = getHtmlFromString(htmlString);
-    const images = Array.from(
-      currentDocument.querySelectorAll("img:not(header img)")
-    );
 
-    if (!images.length) {
-      return;
-    }
-
-    const pageTitle = currentDocument
-      .getElementsByTagName("title")[0]
-      .text.replace(/(\n|\t)/gi, "");
-
-    return {
-      pageTitle,
-      pageLink: link,
-      images: images.map(({ src, alt }) => ({
-        src,
-        alt,
-        note: "",
-        isChecked: false,
-      })),
-    };
+    return getImagesDataFromDocument(currentDocument, link);
   } catch (error) {
-    console.error("error", error?.message);
+    console.error("error", error);
   }
 };
 
@@ -56,7 +85,6 @@ const getImagesData = async (links) => {
   }
 
   const imagesData = await Promise.all(links.map(getImageData));
-
   const filteredData = imagesData.filter((data) => !!data);
 
   localStorage.setItem(dataStorageKey, JSON.stringify(filteredData));
@@ -64,7 +92,11 @@ const getImagesData = async (links) => {
   return filteredData;
 };
 
-const getTableRowBackground = (isChecked, imageIndex) => {
+const getTableRowBackground = (imageIndex, isChecked, isFailed = false) => {
+  if (isFailed) {
+    return "#ffdfdf";
+  }
+
   if (isChecked) {
     return "#dfffdf";
   }
@@ -76,12 +108,63 @@ const getTableRowBackground = (isChecked, imageIndex) => {
   return "";
 };
 
-const renderTable = async () => {
-  const links = Array.from(document.querySelectorAll("a[href^='/']")).map(
-    ({ href }) => href
-  );
+const renderTable = (data) => {
+  document.head.innerHTML = `
+    <style>
+      * {
+        box-sizing: border-box;
+      }
 
-  const data = await getImagesData(links.slice(0, 20));
+      body, button {
+        font-family: sans-serif;
+      } 
+
+      th, td, caption {
+        border: 1px solid #ddd;
+      }
+
+      td:not(:first-child), caption, th {
+        padding: 10px;
+      }
+
+      th {
+        font-weight: 600; 
+      }
+
+      .action-button {
+        text-decoration: none;
+        display: block;
+        border: none;
+        background-color: #06f;
+        border-radius: 10px;
+        width: 160px;
+        padding: 5px 8px;
+        font-weight: 500;
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        text-align: center;
+        transition: background-color 0.25s ease-in-out;
+      }
+
+      .action-button:hover {
+        background-color: rgb(0, 54, 134);
+      }
+
+      .action-button:disabled {
+        pointer-events: none;
+        background-color: rgb(83, 152, 255);
+      }
+
+      .action-button:not(:first-child){
+        margin-top: 10px;
+      }
+
+      .action-button.success {
+        background-color: rgb(0, 165, 0);
+      }
+    </style>
+  `;
 
   const table = data
     .map(
@@ -107,10 +190,11 @@ const renderTable = async () => {
             <tbody>
                 ${images
                   .map(
-                    ({ src, alt, note, isChecked }, imageIndex) => `
-                    <tr style="background-color: ${getTableRowBackground(
+                    ({ src, alt, note, isChecked, isFailed }, imageIndex) => `
+                    <tr id="table-row-${pageIndex}-${imageIndex}" style="background-color: ${getTableRowBackground(
+                      imageIndex,
                       isChecked,
-                      imageIndex
+                      isFailed
                     )};">
                         <td>
                             <img src=${src} alt="${alt}" width=400 />
@@ -140,6 +224,18 @@ const renderTable = async () => {
                             >
                               Save the note
                             </button>
+                            <button
+                              ${!isChecked ? "disabled" : ""}
+                              class="action-button" 
+                              onclick="markAsFailedHandler(this, ${pageIndex}, ${imageIndex})"
+                              id="failed-button-${pageIndex}-${imageIndex}"
+                            >
+                              ${
+                                isFailed
+                                  ? unmarkFailedButtonText
+                                  : failedButtonText
+                              } 
+                            </button>
                         </td>
                         <td>
                             <input style="display: block; margin: auto" type="checkbox" ${
@@ -156,54 +252,9 @@ const renderTable = async () => {
     .join("");
 
   document.body.innerHTML = `
-   <style>
-    th, td, caption {
-      border: 1px solid #ddd;
-    }
-
-    td:not(:first-child), caption, th {
-      padding: 10px;
-    }
-
-    th {
-      font-weight: 600; 
-    }
-
-    .action-button {
-      display: block;
-      border: none;
-      background-color: #06f;
-      border-radius: 10px;
-      width: 160px;
-      padding: 5px 8px;
-      font-weight: 500;
-      color: #fff;
-      font-size: 16px;
-      cursor: pointer;
-      text-align: center;
-      transition: background-color 0.25s ease-in-out;
-    }
-
-    .action-button:hover {
-      background-color: rgb(0, 54, 134);
-    }
-
-    .action-button:disabled {
-      pointer-events: none;
-      background-color: rgb(83, 152, 255);
-    }
-
-    .action-button:last-child {
-      margin-top: 10px;
-    }
-
-    .action-button.success {
-      background-color: rgb(0, 165, 0);
-    }
-  </style>
   <div style="width: fit-content; margin: 0 auto; padding: 16px 0;">
     ${table}
-  <div>`;
+  </div>`;
 
   window.onInputHandler = (pageIndex, imageIndex) => {
     const saveNoteButton = document.getElementById(
@@ -226,22 +277,91 @@ const renderTable = async () => {
     button.classList.add("success");
   };
 
-  window.onChangeHandler = (element, pageIndex, imageIndex) => {
-    const isChecked = element.checked;
+  window.markAsFailedHandler = (button, pageIndex, imageIndex) => {
+    const tableRow = document.getElementById(
+      `table-row-${pageIndex}-${imageIndex}`
+    );
 
-    data[pageIndex].images[imageIndex].isChecked = isChecked;
+    const currentImage = data[pageIndex].images[imageIndex];
+    const isFailed = !currentImage.isFailed;
+    const { isChecked } = currentImage;
+    currentImage.isFailed = isFailed;
 
     localStorage.setItem(dataStorageKey, JSON.stringify(data));
 
-    element.parentElement.parentElement.style.backgroundColor =
-      getTableRowBackground(isChecked, imageIndex);
+    tableRow.style.backgroundColor = getTableRowBackground(
+      imageIndex,
+      isChecked,
+      isFailed
+    );
+
+    button.textContent = isFailed ? unmarkFailedButtonText : failedButtonText;
   };
+
+  window.onChangeHandler = (element, pageIndex, imageIndex) => {
+    const isChecked = element.checked;
+    const currentImage = data[pageIndex].images[imageIndex];
+    currentImage.isChecked = isChecked;
+
+    const tableRow = document.getElementById(
+      `table-row-${pageIndex}-${imageIndex}`
+    );
+    const failedButton = document.getElementById(
+      `failed-button-${pageIndex}-${imageIndex}`
+    );
+
+    failedButton.disabled = !isChecked;
+
+    if (!isChecked) {
+      failedButton.textContent = failedButtonText;
+      currentImage.isFailed = false;
+    }
+
+    localStorage.setItem(dataStorageKey, JSON.stringify(data));
+
+    tableRow.style.backgroundColor = getTableRowBackground(
+      imageIndex,
+      isChecked
+    );
+  };
+
+  dispatchDataFromExternalScript();
 };
 
-renderTable().then(() => {
-  const dataFromExternalScript = new CustomEvent("dataFromExternalScript", {
-    detail: { tableIsRendered: true },
-  });
+const useSiteMap = async () => {
+  const relativeLinks = Array.from(
+    document.querySelectorAll("a[href^='/']")
+  ).map(({ href }) => href);
 
-  document.dispatchEvent(dataFromExternalScript);
-});
+  const absoluteLinks = Array.from(
+    document.querySelectorAll(`a[href^='https://${host}']`)
+  ).map(({ href }) => href);
+
+  const links = Array.from(new Set([...relativeLinks, absoluteLinks]));
+
+  const data = await getImagesData(links);
+
+  renderTable(data);
+};
+
+const usePage = () => {
+  let data;
+  const cashedData = localStorage.getItem(dataStorageKey);
+
+  if (cashedData) {
+    data = JSON.parse(cashedData);
+  } else {
+    data = [getImagesDataFromDocument()];
+    localStorage.setItem(dataStorageKey, JSON.stringify(data), data);
+  }
+
+  renderTable(data);
+};
+
+if (action === "useSitemap") {
+  useSiteMap();
+}
+
+if (action === "usePage") {
+  usePage();
+}
