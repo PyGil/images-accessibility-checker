@@ -30,16 +30,34 @@
         margin-top: 6px;
       }
 
-      #clear-cash {
-        width: 100px;
-        margin: 10px 0 0;
+      .cache-section {
+        margin: 40px 0 0;
+      }
+
+      .cache-section .action-button {
+        background-color: rgb(34, 33, 33);
+      }
+
+      .cache-section .action-button:hover {
+        background-color: rgb(71, 69, 69);
+      }
+
+      .cache-section .action-button:disabled {
+        background-color: rgb(87, 84, 84);
       }
     </style>
   </head>
   <body>
-      <button id="use-sitemap" class="action-button">Use sitemap</button>
-      <button id="use-page" class="action-button">Use the page</button>
-      <button id="clear-cash" class="action-button" disabled>Clear cash</button>
+    <button id="use-sitemap" class="action-button">Use sitemap</button>
+    <button id="use-page" class="action-button">Use the page</button>
+    <div class="cache-section">
+      <button id="clear-cache" class="action-button" disabled>
+        Clear cache
+      </button>
+      <button id="clear-all-cache" class="action-button" disabled>
+        Clear all cache from the website
+      </button>
+    </div>
     <script src="popup.js"></script>
   </body>
 </html>

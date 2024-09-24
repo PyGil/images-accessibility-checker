@@ -1,10 +1,25 @@
-document.addEventListener("dataFromExternalScript", ({ detail }) => {
-  chrome.runtime.sendMessage(detail);
-});
-
 const { host, pathname } = window.location;
 const path = pathname.replace(/\/$/, "");
-const generalStateKey = `${host}${path}::general`;
+const generalStateKey = `${host}${path}::generalState`;
+const actionKey = `${host}${path}::action`;
+const dataKey = `${host}${path}::data`;
+
+document.addEventListener("onTableRendered", ({ detail: { action } }) => {
+  chrome.storage.local.set({
+    [generalStateKey]: {
+      buttonState: "setSuccess",
+    },
+    [actionKey]: action,
+  });
+
+  chrome.runtime.sendMessage({ tableRenderedAction: action });
+});
+
+document.addEventListener("onTableDataChange", ({ detail: { tableData } }) => {
+  chrome.storage.local.set({
+    [dataKey]: tableData,
+  });
+});
 
 chrome.storage.local.remove(generalStateKey);
 
@@ -34,20 +49,21 @@ const scrollToElement = (element, offset = 0) =>
     behavior: "smooth",
   });
 
-const scrollToImageFromQuery = () => {
+const getImage = () => {
+  if (imageURL.length >= 60) {
+    document.querySelector(`img[src^="${imageURL.slice(0, 10)}"]`);
+  }
+
   const { pathname: imagePathname, search: imageSearch } = new URL(imageURL);
 
-  const image =
+  return (
     document.querySelector(`img[src="${imageURL}"]`) ||
-    document.querySelector(`img[src^="${imagePathname}${imageSearch}"]`);
-
-  console.log(
-    "image",
-    image,
-    new URL(imageURL),
-    `${imagePathname}${imageSearch}`,
-    imageURL
+    document.querySelector(`img[src^="${imagePathname}${imageSearch}"]`)
   );
+};
+
+const scrollToImageFromQuery = () => {
+  const image = getImage();
 
   if (!image) {
     return;
@@ -75,8 +91,6 @@ const scrollToImageFromQuery = () => {
 };
 
 const imageURL = new URLSearchParams(window.location.search).get("image-url");
-
-console.log(window.location.search)
 
 if (imageURL) {
   scrollToImageFromQuery();

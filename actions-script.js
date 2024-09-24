@@ -15,12 +15,20 @@ const getHtmlFromString = (htmlString) =>
 const delay = async (time) =>
   new Promise((resolve) => setTimeout(resolve, time));
 
-const dispatchDataFromExternalScript = () => {
-  const dataFromExternalScript = new CustomEvent("dataFromExternalScript", {
-    detail: { tableAction: action },
+const dispatchCustomEvent = (detail, eventName) => {
+  const dataFromExternalScript = new CustomEvent(eventName, {
+    detail,
   });
 
   document.dispatchEvent(dataFromExternalScript);
+};
+
+const dispatchTableRendered = () => {
+  dispatchCustomEvent({ action }, "onTableRendered");
+};
+
+const dispatchTableDataChange = (data) => {
+  dispatchCustomEvent({ tableData: data }, "onTableDataChange");
 };
 
 const getImagesDataFromDocument = (
@@ -43,7 +51,7 @@ const getImagesDataFromDocument = (
     images: images.map((image) => ({
       src: image.src,
       alt: image.alt,
-      note: image.hasAttribute(image.alt)
+      note: image.hasAttribute("alt")
         ? ""
         : "This image has no  alt attribute at all. Neither with en empty string nor without a value. Even if the image is just decorative, you should add an alt attribute to the image with an empty value. Otherwise, screen readers may read incorrect information and potentially confuse some users.",
       isChecked: false,
@@ -77,17 +85,27 @@ const getImageData = async (link) => {
   }
 };
 
-const getImagesData = async (links) => {
-  const cashedData = localStorage.getItem(dataStorageKey);
+const getCachedImagesData = () => {
+  const cachedData = document
+    .querySelector("script[data-table]")
+    ?.getAttribute("data-table");
 
-  if (cashedData) {
-    return JSON.parse(cashedData);
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+};
+
+const getImagesData = async (links) => {
+  const cachedData = getCachedImagesData();
+
+  if (cachedData) {
+    return cachedData;
   }
 
   const imagesData = await Promise.all(links.map(getImageData));
   const filteredData = imagesData.filter((data) => !!data);
 
-  localStorage.setItem(dataStorageKey, JSON.stringify(filteredData));
+  dispatchTableDataChange(filteredData);
 
   return filteredData;
 };
@@ -117,7 +135,7 @@ const renderTable = (data) => {
 
       body, button {
         font-family: sans-serif;
-      } 
+      }
 
       th, td, caption {
         border: 1px solid #ddd;
@@ -128,7 +146,7 @@ const renderTable = (data) => {
       }
 
       th {
-        font-weight: 600; 
+        font-weight: 600;
       }
 
       .action-button {
@@ -202,23 +220,33 @@ const renderTable = (data) => {
                         <td>
                             ${alt}
                         </td>
-                        <td 
+                        <td
                           style="outline: none; vertical-align: top; max-width: 400px;"
                           id="note-${pageIndex}-${imageIndex}"
-                          contenteditable="true" 
+                          contenteditable="true"
                           oninput="onInputHandler(${pageIndex}, ${imageIndex})"
                         >
                           ${note}
                         </td>
                         <td>
+                            ${
+                              src.includes("data:image")
+                                ? `
+                            <button disabled class="action-button">
+                              You can only reach this img manually
+                            </button>
+                            `
+                                : `
                             <a href="${
                               pageLink + "?image-url=" + src
                             }" target="_bank" class="action-button">
                               Go to the image
-                            </a>
+                            </a>`
+                            }
+                            
                             <button
                               disabled
-                              class="action-button" 
+                              class="action-button"
                               onclick="saveNoteHandler(this, ${pageIndex}, ${imageIndex})"
                               id="save-note-button-${pageIndex}-${imageIndex}"
                             >
@@ -226,7 +254,7 @@ const renderTable = (data) => {
                             </button>
                             <button
                               ${!isChecked ? "disabled" : ""}
-                              class="action-button" 
+                              class="action-button"
                               onclick="markAsFailedHandler(this, ${pageIndex}, ${imageIndex})"
                               id="failed-button-${pageIndex}-${imageIndex}"
                             >
@@ -234,7 +262,7 @@ const renderTable = (data) => {
                                 isFailed
                                   ? unmarkFailedButtonText
                                   : failedButtonText
-                              } 
+                              }
                             </button>
                         </td>
                         <td>
@@ -270,7 +298,7 @@ const renderTable = (data) => {
 
     data[pageIndex].images[imageIndex].note = note.innerHTML;
 
-    localStorage.setItem(dataStorageKey, JSON.stringify(data));
+    dispatchTableDataChange(data);
 
     button.disabled = true;
     button.textContent = "Saved ✓";
@@ -287,7 +315,7 @@ const renderTable = (data) => {
     const { isChecked } = currentImage;
     currentImage.isFailed = isFailed;
 
-    localStorage.setItem(dataStorageKey, JSON.stringify(data));
+    dispatchTableDataChange(data);
 
     tableRow.style.backgroundColor = getTableRowBackground(
       imageIndex,
@@ -317,7 +345,7 @@ const renderTable = (data) => {
       currentImage.isFailed = false;
     }
 
-    localStorage.setItem(dataStorageKey, JSON.stringify(data));
+    dispatchTableDataChange(data);
 
     tableRow.style.backgroundColor = getTableRowBackground(
       imageIndex,
@@ -325,7 +353,7 @@ const renderTable = (data) => {
     );
   };
 
-  dispatchDataFromExternalScript();
+  dispatchTableRendered();
 };
 
 const useSiteMap = async () => {
@@ -346,13 +374,13 @@ const useSiteMap = async () => {
 
 const usePage = () => {
   let data;
-  const cashedData = localStorage.getItem(dataStorageKey);
+  const cachedData = getCachedImagesData();
 
-  if (cashedData) {
-    data = JSON.parse(cashedData);
+  if (cachedData) {
+    data = cachedData;
   } else {
     data = [getImagesDataFromDocument()];
-    localStorage.setItem(dataStorageKey, JSON.stringify(data), data);
+    dispatchTableDataChange(data);
   }
 
   renderTable(data);

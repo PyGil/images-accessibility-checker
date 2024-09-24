@@ -1,144 +1,193 @@
 const useSitemapButton = document.getElementById("use-sitemap");
 const usePageButton = document.getElementById("use-page");
-const clearCashButton = document.getElementById("clear-cash");
+const clearCacheButton = document.getElementById("clear-cache");
+const clearAllCacheButton = document.getElementById("clear-all-cache");
 
 let generalStateKey;
-let actionStateKey;
+let actionKey;
+let dataKey;
 
-const storeActionState = (value) => {
-  chrome.storage.local.set({
-    [actionStateKey]: value,
-  });
-};
-
-const restoreActionState = () => {
-  chrome.storage.local.get([actionStateKey], (result) => {
-    const state = result[actionStateKey];
-
-    if (!state) {
-      return;
-    }
-
-    if (state === "useSitemap") {
-      usePageButton.disabled = true;
-      return;
-    }
-
-    if (state === "usePage") {
+const buttonsState = {
+  useSitemap: {
+    setLoading: () => {
+      useSitemapButton.textContent = "Wait...";
       useSitemapButton.disabled = true;
-      return;
-    }
-  });
-};
-
-const storeGeneralState = () => {
-  chrome.storage.local.set({
-    [generalStateKey]: {
-      useSitemapButtonText: useSitemapButton.textContent,
-      useSitemapButtonDisabled: useSitemapButton.disabled,
-      useSitemapButtonBackground: useSitemapButton.style.backgroundColor,
-      usePageButtonText: usePageButton.textContent,
-      usePageButtonDisabled: useSitemapButton.disabled,
-      usePageButtonBackground: usePageButton.style.backgroundColor,
+      usePageButton.disabled = true;
     },
-  });
-};
-
-const restoreGeneralState = () => {
-  chrome.storage.local.get([generalStateKey], (result) => {
-    const state = result[generalStateKey];
-
-    if (!state) {
-      return;
-    }
-
-    useSitemapButton.textContent = state.useSitemapButtonText;
-    useSitemapButton.disabled = state.useSitemapButtonDisabled;
-    useSitemapButton.style.backgroundColor = state.useSitemapButtonBackground;
-
-    usePageButton.textContent = state.usePageButtonText;
-    usePageButton.disabled = state.usePageButtonDisabled;
-    usePageButton.style.backgroundColor = state.usePageButtonBackground;
-  });
+    setSuccess: () => {
+      useSitemapButton.textContent = "Success";
+      useSitemapButton.style.backgroundColor = "rgb(0, 165, 0)";
+      useSitemapButton.disabled = true;
+      usePageButton.disabled = true;
+    },
+    setActive: () => {
+      useSitemapButton.disabled = false;
+      usePageButton.disabled = true;
+    },
+  },
+  usePage: {
+    setLoading: () => {
+      usePageButton.textContent = "Wait...";
+      useSitemapButton.disabled = true;
+      usePageButton.disabled = true;
+    },
+    setSuccess: () => {
+      usePageButton.textContent = "Success";
+      usePageButton.style.backgroundColor = "rgb(0, 165, 0)";
+      useSitemapButton.disabled = true;
+      usePageButton.disabled = true;
+    },
+    setActive: () => {
+      usePageButton.disabled = false;
+      useSitemapButton.disabled = true;
+    },
+  },
 };
 
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   const { host, pathname } = new URL(tabs[0].url);
   const path = pathname.replace(/\/$/, "");
 
-  generalStateKey = `${host}${path}::general`;
-  actionStateKey = `${host}${path}::action`;
+  const url = `${host}${path}`;
 
-  restoreGeneralState();
-  restoreActionState();
+  generalStateKey = `${url}::generalState`;
+  dataKey = `${url}::data`;
+  actionKey = `${url}::action`;
 
-  chrome.storage.local.get([actionStateKey], (result) => {
-    const state = result[actionStateKey];
+  chrome.storage.local.get(null, (result) => {
+    const isCacheExist = Object.keys(result).find(
+      (key) => key.startsWith(host) && key.endsWith("::data")
+    );
 
-    if (state) {
-      clearCashButton.disabled = false;
+    if (isCacheExist) {
+      clearAllCacheButton.disabled = false;
+    }
+
+    const data = result[dataKey];
+    const generalState = result[generalStateKey];
+    const action = result[actionKey];
+
+    if (data) {
+      clearCacheButton.disabled = false;
+    }
+
+    if (generalState && action) {
+      const { buttonState } = generalState;
+
+      buttonsState[action][buttonState]?.();
+
+      return;
+    }
+
+    if (action) {
+      buttonsState[action]?.setActive();
     }
   });
 });
 
-
 const useSitemapHandler = () => {
-  useSitemapButton.textContent = "Wait...";
-  useSitemapButton.disabled = true;
-  usePageButton.disabled = true;
+  buttonsState.useSitemap.setLoading();
 
-  storeGeneralState();
+  chrome.storage.local.set({
+    [generalStateKey]: {
+      buttonState: "setLoading",
+    },
+    [actionKey]: "useSitemap",
+  });
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      function: () => {
-        const script = document.createElement("script");
-        script.src = chrome.runtime.getURL("actions-script.js");
-        script.setAttribute("data-action", "useSitemap");
+      function: (dataKey) => {
+        chrome.storage.local.get([dataKey], (result) => {
+          const data = result[dataKey];
 
-        document.body.appendChild(script);
+          const script = document.createElement("script");
+          script.src = chrome.runtime.getURL("actions-script.js");
+          script.setAttribute("data-action", "useSitemap");
+          data && script.setAttribute("data-table", JSON.stringify(data));
+
+          document.body.appendChild(script);
+        });
       },
+      args: [dataKey],
     });
   });
 };
 
 const usePageHandler = () => {
-  useSitemapButton.disabled = true;
-  usePageButton.disabled = true;
+  buttonsState.usePage.setLoading();
+
+  chrome.storage.local.set({
+    [generalStateKey]: {
+      buttonState: "setLoading",
+      [actionKey]: "usePage",
+    },
+  });
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      function: () => {
-        const script = document.createElement("script");
-        script.src = chrome.runtime.getURL("actions-script.js");
-        script.setAttribute("data-action", "usePage");
-        document.body.appendChild(script);
+      function: (dataKey) => {
+        chrome.storage.local.get([dataKey], (result) => {
+          const data = result[dataKey];
+
+          const script = document.createElement("script");
+          script.src = chrome.runtime.getURL("actions-script.js");
+          script.setAttribute("data-action", "usePage");
+          data && script.setAttribute("data-table", JSON.stringify(data));
+
+          document.body.appendChild(script);
+        });
       },
+      args: [dataKey],
     });
   });
 };
 
-const clearCashHandler = () => {
+const clearCacheHandler = () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      function: () => {
+      function: (dataKey, actionStateKey) => {
         const confirmation = confirm("Do you want to clear your cache?");
 
         if (!confirmation) {
           return;
         }
 
-        const { host, pathname } = window.location;
-        const path = pathname.replace(/\/$/, "");
-        const dataStorageKey = `image-checker::${host}${path}::data`;
+        chrome.storage.local.remove(actionStateKey);
+        chrome.storage.local.remove(dataKey);
 
-        localStorage.removeItem(dataStorageKey);
-        chrome.storage.local.remove(`${host}${path}::action`);
+        window.location.reload();
+      },
+      args: [dataKey, actionKey],
+    });
+  });
+};
 
-        location.reload();
+const clearAllCacheHandler = () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      function: () => {
+        const confirmation = confirm(
+          "Do you want to clear all cache from the website?"
+        );
+
+        if (!confirmation) {
+          return;
+        }
+
+        chrome.storage.local.get(null, (result) => {
+          const keys = Object.keys(result).filter((key) =>
+            key.startsWith(window.location.host)
+          );
+
+          chrome.storage.local.remove(keys);
+        });
+
+        window.location.reload();
       },
     });
   });
@@ -146,23 +195,13 @@ const clearCashHandler = () => {
 
 useSitemapButton.addEventListener("click", useSitemapHandler);
 usePageButton.addEventListener("click", usePageHandler);
-clearCashButton.addEventListener("click", clearCashHandler);
+clearCacheButton.addEventListener("click", clearCacheHandler);
+clearAllCacheButton.addEventListener("click", clearAllCacheHandler);
 
-chrome.runtime.onMessage.addListener(({ tableAction }) => {
-  if (tableAction) {
-    clearCashButton.disabled = false;
+chrome.runtime.onMessage.addListener(({ tableRenderedAction }) => {
+  if (tableRenderedAction) {
+    clearCacheButton.disabled = false;
 
-    if (tableAction === "useSitemap") {
-      useSitemapButton.textContent = "Success";
-      useSitemapButton.style.backgroundColor = "rgb(0, 165, 0)";
-    }
-
-    if (tableAction === "usePage") {
-      usePageButton.textContent = "Success";
-      usePageButton.style.backgroundColor = "rgb(0, 165, 0)";
-    }
-
-    storeGeneralState();
-    storeActionState(tableAction);
+    buttonsState[tableRenderedAction].setSuccess();
   }
 });
