@@ -9,6 +9,19 @@ const action = document
   .querySelector("script[data-action]")
   ?.getAttribute("data-action");
 
+const chunkArray = (array, chunkSize) =>
+  array.reduce((result, item, index) => {
+    const chunkIndex = Math.floor(index / chunkSize);
+
+    if (!result[chunkIndex]) {
+      result[chunkIndex] = [];
+    }
+
+    result[chunkIndex].push(item);
+
+    return result;
+  }, []);
+
 const getHtmlFromString = (htmlString) =>
   parser.parseFromString(htmlString, "text/html");
 
@@ -104,10 +117,11 @@ const getImagesData = async (links) => {
 
   const imagesData = await Promise.all(links.map(getImageData));
   const filteredData = imagesData.filter((data) => !!data);
+  const chunkedData = chunkArray(filteredData, 10);
 
-  dispatchTableDataChange(filteredData);
+  dispatchTableDataChange(chunkedData);
 
-  return filteredData;
+  return chunkedData;
 };
 
 const getTableRowBackground = (imageIndex, isChecked, isFailed = false) => {
@@ -125,6 +139,8 @@ const getTableRowBackground = (imageIndex, isChecked, isFailed = false) => {
 
   return "";
 };
+
+let currentPage = 1;
 
 const renderTable = (data) => {
   document.head.innerHTML = `
@@ -181,10 +197,59 @@ const renderTable = (data) => {
       .action-button.success {
         background-color: rgb(0, 165, 0);
       }
+
+      .pagination {
+        display: flex;
+        list-style: none;
+        position: sticky;
+        background: #fff;
+        top: 0;
+        width: 100%;
+        padding: 10px;
+        left: 0;
+        right: 0;
+        justify-content: center;
+      }
+
+      .pagination li + li {
+        margin-left: 6px;
+      }
+
+      .pagination li + li {
+        margin-left: 4px;
+      }
+
+      .pagination .page-button {
+        background: none;
+        border: none;
+        border-radius: 50%;
+        padding: 0;
+        width: 25px;
+        height: 25px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      }
+
+      .pagination .page-button:hover {
+        background-color: rgba(0, 0, 0, 0.1);
+      }
+
+      .pagination .page-button.active {
+        pointer-events: none;
+        background-color: #06f;
+        color: #fff;
+      }
+
+      .pagination .page-button:disabled {
+        pointer-events: none;
+        color: #000;
+      }
     </style>
   `;
 
-  const table = data
+  console.log("data", data);
+
+  const table = data[currentPage - 1]
     .map(
       ({ pageLink, pageTitle, images }, pageIndex) => `
         <table style="border-collapse: collapse; margin-bottom: 40px; table-layout: fixed;">
@@ -193,7 +258,7 @@ const renderTable = (data) => {
                   <span style="font-weight: 600">Page Title: </span>${pageTitle}
                 </div>
                 <div>
-                  <span style="font-weight: 600">Page URL: </span><a href=${pageLink} target="_blank">${pageLink}</a>
+                  <span style="font-weight: 600">Page URL: </span><a rel="noreferrer" href=${pageLink} target="_blank">${pageLink}</a>
                 </div>
             </caption>
             <thead>
@@ -239,7 +304,7 @@ const renderTable = (data) => {
                                 : `
                             <a href="${
                               pageLink + "?image-url=" + src
-                            }" target="_bank" class="action-button">
+                            }" target="_bank" class="action-button" rel="noreferrer">
                               Go to the image
                             </a>`
                             }
@@ -279,8 +344,71 @@ const renderTable = (data) => {
     )
     .join("");
 
+  const totalPages = data.length;
+
+  function generatePages() {
+    const visibleElementsLength = 7;
+    const halfOfVisibleElements = Math.round(visibleElementsLength / 2);
+    const startPage = 1;
+    const startOfEndPage = totalPages - halfOfVisibleElements;
+    const startFiller = [startPage, "..."];
+    const endFiller = ["...", totalPages];
+
+    if (totalPages <= visibleElementsLength) {
+      return createArrayFromRange(1, totalPages);
+    }
+
+    if (currentPage <= halfOfVisibleElements) {
+      return [
+        ...createArrayFromRange(startPage, halfOfVisibleElements + 1),
+        ...endFiller,
+      ];
+    }
+
+    if (currentPage > startOfEndPage) {
+      return [
+        ...startFiller,
+        ...createArrayFromRange(startOfEndPage, totalPages),
+      ];
+    }
+
+    if (currentPage > halfOfVisibleElements) {
+      return [
+        ...startFiller,
+        ...createArrayFromRange(currentPage - 1, currentPage + 1),
+        ...endFiller,
+      ];
+    }
+  }
+
+  function displayPagination() {
+    const pages = generatePages();
+
+    window.changePage = (page) => {
+      currentPage = page;
+      renderTable(data);
+    };
+
+    return `
+        <ul class="pagination">
+          ${pages
+            .map(
+              (page) => `
+              <li><button class="page-button ${
+                page === currentPage ? "active" : ""
+              }" ${
+                page === "..." ? "disabled" : `onclick="changePage(${page})"`
+              } >${page}</button></li>
+            `
+            )
+            .join("")}
+        </ul>
+      `;
+  }
+
   document.body.innerHTML = `
   <div style="width: fit-content; margin: 0 auto; padding: 16px 0;">
+    ${displayPagination()}
     ${table}
   </div>`;
 
@@ -352,9 +480,11 @@ const renderTable = (data) => {
       isChecked
     );
   };
-
-  dispatchTableRendered();
 };
+
+function createArrayFromRange(start, end) {
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
 
 const useSiteMap = async () => {
   const relativeLinks = Array.from(
@@ -367,9 +497,10 @@ const useSiteMap = async () => {
 
   const links = Array.from(new Set([...relativeLinks, absoluteLinks]));
 
-  const data = await getImagesData(links);
+  const data = await getImagesData(links.slice(0, 120));
 
   renderTable(data);
+  dispatchTableRendered();
 };
 
 const usePage = () => {
@@ -384,6 +515,7 @@ const usePage = () => {
   }
 
   renderTable(data);
+  dispatchTableRendered();
 };
 
 if (action === "useSitemap") {

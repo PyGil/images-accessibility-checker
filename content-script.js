@@ -50,10 +50,6 @@ const scrollToElement = (element, offset = 0) =>
   });
 
 const getImage = () => {
-  if (imageURL.length >= 60) {
-    document.querySelector(`img[src^="${imageURL.slice(0, 10)}"]`);
-  }
-
   const { pathname: imagePathname, search: imageSearch } = new URL(imageURL);
 
   return (
