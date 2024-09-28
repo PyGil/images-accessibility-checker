@@ -3,6 +3,7 @@ const path = pathname.replace(/\/$/, "");
 const generalStateKey = `${host}${path}::generalState`;
 const actionKey = `${host}${path}::action`;
 const dataKey = `${host}${path}::data`;
+const pageKey = `${host}${path}::page`;
 
 document.addEventListener("onTableRendered", ({ detail: { action } }) => {
   chrome.storage.local.set({
@@ -20,6 +21,13 @@ document.addEventListener("onTableDataChange", ({ detail: { tableData } }) => {
     [dataKey]: tableData,
   });
 });
+
+document.addEventListener("onPageChange", ({ detail: { page } }) => {
+  chrome.storage.local.set({
+    [pageKey]: page,
+  });
+});
+
 
 chrome.storage.local.remove(generalStateKey);
 
