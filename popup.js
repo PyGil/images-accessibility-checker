@@ -6,6 +6,7 @@ const clearAllCacheButton = document.getElementById("clear-all-cache");
 let generalStateKey;
 let actionKey;
 let dataKey;
+let pageKey;
 
 const buttonsState = {
   useSitemap: {
@@ -53,6 +54,7 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   generalStateKey = `${url}::generalState`;
   dataKey = `${url}::data`;
   actionKey = `${url}::action`;
+  pageKey = `${url}::page`;
 
   chrome.storage.local.get(null, (result) => {
     const isCacheExist = Object.keys(result).find(
@@ -98,19 +100,21 @@ const useSitemapHandler = () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      function: (dataKey) => {
-        chrome.storage.local.get([dataKey], (result) => {
+      function: (dataKey, pageKey) => {
+        chrome.storage.local.get([dataKey, pageKey], (result) => {
           const data = result[dataKey];
+          const page = result[pageKey];
 
           const script = document.createElement("script");
           script.src = chrome.runtime.getURL("actions-script.js");
           script.setAttribute("data-action", "useSitemap");
+          page && script.setAttribute("table-page", page.toString());
           data && script.setAttribute("data-table", JSON.stringify(data));
 
           document.body.appendChild(script);
         });
       },
-      args: [dataKey],
+      args: [dataKey, pageKey],
     });
   });
 };
@@ -149,19 +153,18 @@ const clearCacheHandler = () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.scripting.executeScript({
       target: { tabId: tabs[0].id },
-      function: (dataKey, actionStateKey) => {
+      function: (dataKey, actionStateKey, pageKey) => {
         const confirmation = confirm("Do you want to clear your cache?");
 
         if (!confirmation) {
           return;
         }
 
-        chrome.storage.local.remove(actionStateKey);
-        chrome.storage.local.remove(dataKey);
+        chrome.storage.local.remove([actionStateKey, dataKey, pageKey]);
 
         window.location.reload();
       },
-      args: [dataKey, actionKey],
+      args: [dataKey, actionKey, pageKey],
     });
   });
 };
@@ -201,6 +204,7 @@ clearAllCacheButton.addEventListener("click", clearAllCacheHandler);
 chrome.runtime.onMessage.addListener(({ tableRenderedAction }) => {
   if (tableRenderedAction) {
     clearCacheButton.disabled = false;
+    clearAllCacheButton.disabled = false;
 
     buttonsState[tableRenderedAction].setSuccess();
   }

@@ -3,6 +3,7 @@ const path = pathname.replace(/\/$/, "");
 const generalStateKey = `${host}${path}::generalState`;
 const actionKey = `${host}${path}::action`;
 const dataKey = `${host}${path}::data`;
+const pageKey = `${host}${path}::page`;
 
 document.addEventListener("onTableRendered", ({ detail: { action } }) => {
   chrome.storage.local.set({
@@ -20,6 +21,13 @@ document.addEventListener("onTableDataChange", ({ detail: { tableData } }) => {
     [dataKey]: tableData,
   });
 });
+
+document.addEventListener("onPageChange", ({ detail: { page } }) => {
+  chrome.storage.local.set({
+    [pageKey]: page,
+  });
+});
+
 
 chrome.storage.local.remove(generalStateKey);
 
@@ -50,10 +58,6 @@ const scrollToElement = (element, offset = 0) =>
   });
 
 const getImage = () => {
-  if (imageURL.length >= 60) {
-    document.querySelector(`img[src^="${imageURL.slice(0, 10)}"]`);
-  }
-
   const { pathname: imagePathname, search: imageSearch } = new URL(imageURL);
 
   return (
