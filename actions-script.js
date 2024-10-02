@@ -4,16 +4,20 @@ const path = pathname.replace(/\/$/, "");
 const dataStorageKey = `image-checker::${host}${path}::data`;
 const failedButtonText = "Mark as failed";
 const unmarkFailedButtonText = "Unmark as failed";
-const progressBarId = "pages-progress-image-checker";
+const loaderOverlayId = "loader-overlay-image-checker";
 
 const action = document
   .querySelector("script[data-action]")
   ?.getAttribute("data-action");
 
-let data;
+let data = [];
+let links = [];
 let currentPage = 1;
+let pageIndex = currentPage - 1;
+let backgroundFetchPromise = null;
+let changePagePromise = null;
 
-const chunkArray = (array, chunkSize) =>
+const chunkArray = (array, chunkSize = 10) =>
   array.reduce((result, item, index) => {
     const chunkIndex = Math.floor(index / chunkSize);
 
@@ -56,10 +60,35 @@ const dispatchChangePage = (page) => {
   dispatchCustomEvent({ page }, "onPageChange");
 };
 
+const getCachedImagesData = () => {
+  const cachedData = document
+    .querySelector("script[data-table]")
+    ?.getAttribute("data-table");
+
+  if (cachedData) {
+    return JSON.parse(cachedData);
+  }
+};
+
+const getCachedPage = () => {
+  const cachedPage = document
+    .querySelector("script[table-page]")
+    ?.getAttribute("table-page");
+
+  if (cachedPage) {
+    return +cachedPage;
+  }
+};
+
+const updatePage = (newPage) => {
+  currentPage = newPage;
+  pageIndex = newPage - 1;
+};
+
 const renderHeadStyles = () => {
   document.head.innerHTML = `
   <style>
-    * {
+    *, ::after, ::before {
       box-sizing: border-box;
     }
 
@@ -174,46 +203,12 @@ const renderHeadStyles = () => {
 `;
 };
 
-const renderProgressBarStyles = () => {
-  const style = document.createElement("style");
+const getDefaultNote = (image) => {
+  if (image.hasAttribute("alt")) {
+    return "";
+  }
 
-  style.textContent = `
-    #${progressBarId} {
-      -webkit-appearance: none;
-      -moz-appearance: none;
-      appearance: none;
-      position: fixed;
-      width: 260px;
-      height: 18px;
-      right: 2vw;
-      bottom: 5vh;
-      z-index: 9999;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    #${progressBarId}::-webkit-progress-bar {
-      background-color: #eee;
-      border-radius: 12px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25) inset;
-    }
-
-    #${progressBarId}::-webkit-progress-value {
-      background-image: -webkit-linear-gradient(-45deg, transparent 33%, rgba(0, 0, 0, 0.1) 33%, rgba(0, 0, 0, 0.1) 66%, transparent 66%), -webkit-linear-gradient(top, rgba(255, 255, 255, 0.25), rgba(0, 0, 0, 0.25)), -webkit-linear-gradient(left, #06f, #06f);
-      background-size: 35px 20px, 100% 100%, 100% 100%;
-    }
-  `;
-
-  document.head.appendChild(style);
-};
-
-const renderProgressBar = (maxValue) => {
-  const progressBar = document.createElement("progress");
-  progressBar.setAttribute("max", maxValue);
-  progressBar.setAttribute("value", "0");
-  progressBar.setAttribute("id", progressBarId);
-  renderProgressBarStyles();
-  document.body.appendChild(progressBar);
+  return "This image has no alt attribute at all. Neither with en empty string nor without a value. Even if the image is just decorative, you should add an alt attribute to the image with an empty value. Otherwise, screen readers may read incorrect information and potentially confuse some users.";
 };
 
 const getImagesDataFromDocument = (
@@ -223,7 +218,11 @@ const getImagesDataFromDocument = (
   const images = Array.from(currentDocument.querySelectorAll("img"));
 
   if (!images.length) {
-    return;
+    return {
+      pageLink: link,
+      error:
+        "The page either doesn't contain any images or it's not an HTML page.",
+    };
   }
 
   const pageTitle = currentDocument
@@ -236,18 +235,138 @@ const getImagesDataFromDocument = (
     images: images.map((image) => ({
       src: image.src,
       alt: image.alt,
-      note: image.hasAttribute("alt")
-        ? ""
-        : "This image has no  alt attribute at all. Neither with en empty string nor without a value. Even if the image is just decorative, you should add an alt attribute to the image with an empty value. Otherwise, screen readers may read incorrect information and potentially confuse some users.",
+      note: getDefaultNote(image),
       isChecked: false,
       isFailed: false,
     })),
   };
 };
 
-const getImageData = async (link, index) => {
-  await delay(1000);
+const renderLoaderStyles = () => {
+  const style = document.createElement("style");
+  style.setAttribute("id", "loader-styles-image-checker");
 
+  style.textContent = `
+    #${loaderOverlayId} {
+      box-sizing: border-box;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: rgb(255 255 255 / 70%);
+      z-index: 999999;
+    }
+
+    #loader-image-checker {
+      box-sizing: border-box;
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+      bottom: 0; right: 0;
+      margin: auto;
+      height: 32px;
+      width: 32px;
+    }
+
+    #loader-image-checker::before {
+      content: "";
+      display: block;
+      box-sizing: border-box;
+      position: absolute;
+      top: 0; left: 0;
+      bottom: 0; right: 0;
+      margin: auto;
+      height: 32px;
+      width: 32px;
+      border: 3px solid #06f;
+      border-bottom: 3px solid transparent;
+      border-radius: 50%;
+      -webkit-animation: loader-animation-1 1.5s cubic-bezier(0.770, 0.000, 0.175, 1.000) infinite;
+              animation: loader-animation-1 1.5s cubic-bezier(0.770, 0.000, 0.175, 1.000) infinite;
+    }
+  
+    @-webkit-keyframes loader-animation-1 {
+      0%   { -webkit-transform: rotate(0deg); }
+      40%  { -webkit-transform: rotate(180deg); }
+      60%  { -webkit-transform: rotate(180deg); }
+      100% { -webkit-transform: rotate(360deg); }
+    }
+
+    @keyframes loader-animation-1 {
+      0%   { transform: rotate(0deg); }
+      40%  { transform: rotate(180deg); }
+      60%  { transform: rotate(180deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    #loader-image-checker::after {
+      content: "";
+      position: absolute;
+      box-sizing: border-box;
+      top: 0; left: 0;
+      bottom: 0; right: 0;
+      margin: auto;
+      width: 6px;
+      height: 6px;
+      background: #06f;
+      border-radius: 50%;
+      -webkit-animation: loader-animation-2 1.5s cubic-bezier(0.770, 0.000, 0.175, 1.000) infinite;
+              animation: loader-animation-2 1.5s cubic-bezier(0.770, 0.000, 0.175, 1.000) infinite;
+    }
+
+    @-webkit-keyframes loader-animation-2 {
+      0%   { -webkit-transform: translate3d(0, -32px, 0) scale(0, 2); opacity: 0; }
+      50%  { -webkit-transform: translate3d(0, 0, 0) scale(1.25, 1.25); opacity: 1; }
+      100% { -webkit-transform: translate3d(0, 8px, 0) scale(0, 0); opacity: 0; }
+    }
+
+    @keyframes loader-animation-2 {
+      0%   { transform: translate3d(0, -32px, 0) scale(0, 2); opacity: 0; }
+      50%  { transform: translate3d(0, 0, 0) scale(1.25, 1.25); opacity: 1; }
+      100% { transform: translate3d(0, 8px, 0) scale(0, 0); opacity: 0; }
+}`;
+
+  document.head.appendChild(style);
+};
+
+const renderLoaderOverlay = () => {
+  document.body.style.overflow = "hidden";
+
+  const style = document.getElementById("loader-styles-image-checker");
+  if (!style) {
+    renderLoaderStyles();
+  }
+
+  const overlay = document.createElement("div");
+  overlay.setAttribute("id", loaderOverlayId);
+  const loader = document.createElement("div");
+  loader.setAttribute("id", "loader-image-checker");
+  overlay.appendChild(loader);
+
+  document.body.appendChild(overlay);
+};
+
+const removeLoaderOverlay = () => {
+  const overlay = document.getElementById(loaderOverlayId);
+
+  if (!overlay) {
+    return;
+  }
+
+  document.body.removeChild(overlay);
+  document.body.style.overflow = "auto";
+};
+
+const getFailedRequestError = (status) => {
+  if (status === 404) {
+    return `The request returned a ${status} status code`;
+  }
+
+  return "Failed to retrieve the page's data; you should check the page manually.";
+};
+
+const getImageData = async (link) => {
   try {
     const response = await fetch(link, {
       mode: "no-cors",
@@ -255,51 +374,42 @@ const getImageData = async (link, index) => {
     });
 
     if (!response.ok) {
-      return;
+      return {
+        pageLink: link,
+        error: getFailedRequestError(response.status),
+      };
     }
 
     const htmlString = await response.text();
     const currentDocument = getHtmlFromString(htmlString);
 
     return getImagesDataFromDocument(currentDocument, link);
-  } catch (error) {
-    console.debug("error from getImageData", error);
-  } finally {
-    const progressBar = document.getElementById(progressBarId);
-    progressBar.setAttribute("value", +progressBar.value + 1);
+  } catch {
+    return {
+      pageLink: link,
+      error:
+        "Failed to retrieve the page's data; you should check the page manually.",
+    };
   }
 };
 
-const getCachedImagesData = () => {
-  const cachedData = document
-    .querySelector("script[data-table]")
-    ?.getAttribute("data-table");
-
-  if (cachedData) {
-    return JSON.parse(cachedData);
-  }
-};
-
-const getImagesData = async (links) => {
-  const cachedData = getCachedImagesData();
-
-  if (cachedData) {
-    data = cachedData;
-
-    return cachedData;
+const getImagesData = async (index = pageIndex, { isBackgroundFetch } = {}) => {
+  if (data[index]) {
+    return data[index];
   }
 
-  renderProgressBar(links.length);
+  if (!isBackgroundFetch) {
+    renderLoaderOverlay();
+  }
 
-  const imagesData = await Promise.all(links.map(getImageData));
-  const filteredData = imagesData.filter((data) => !!data);
-  const chunkedData = chunkArray(filteredData, 10);
+  const imagesData = await Promise.all(links[index].map(getImageData));
 
-  data = chunkedData;
+  removeLoaderOverlay();
 
+  data[index] = imagesData;
   dispatchTableDataChange();
 
-  return chunkedData;
+  return imagesData;
 };
 
 const getTableRowBackground = (imageIndex, isChecked, isFailed = false) => {
@@ -308,11 +418,11 @@ const getTableRowBackground = (imageIndex, isChecked, isFailed = false) => {
   }
 
   if (isChecked) {
-    return "#dfffdf";
+    return "#b7f5b7";
   }
 
   if (!(imageIndex % 2)) {
-    return "#f9f9f9";
+    return "#ebebeb";
   }
 
   return "";
@@ -347,14 +457,14 @@ const generatePages = (totalPages) => {
   if (currentPage > halfOfVisibleElements) {
     return [
       ...startFiller,
-      ...createArrayFromRange(currentPage - 1, currentPage + 1),
+      ...createArrayFromRange(pageIndex, currentPage + 1),
       ...endFiller,
     ];
   }
 };
 
 const displayPagination = ({ isTop } = {}) => {
-  const totalPages = data.length;
+  const totalPages = links.length;
 
   if (totalPages <= 1) {
     return "";
@@ -362,18 +472,28 @@ const displayPagination = ({ isTop } = {}) => {
 
   const pages = generatePages(totalPages);
 
-  window.changePage = (page) => {
-    currentPage = page;
-
+  window.changePage = async (page) => {
+    updatePage(page);
     dispatchChangePage(page);
+
+    if (backgroundFetchPromise && page === data.length + 1) {
+      renderLoaderOverlay();
+      await backgroundFetchPromise;
+      removeLoaderOverlay();
+    } else {
+      changePagePromise = getImagesData();
+      await changePagePromise;
+      changePagePromise = null;
+    }
+
     renderTable();
   };
 
   return `
       <ul class="pagination ${isTop ? "top" : "bottom"}">
-        <li><button class="page-button" onclick="changePage(${
-          currentPage - 1
-        })" ${currentPage === 1 ? "disabled" : ""}>&lt;</button></li>
+        <li><button class="page-button" onclick="changePage(${pageIndex})" ${
+    currentPage === 1 ? "disabled" : ""
+  }>&lt;</button></li>
         ${pages
           .map(
             (page) => `
@@ -387,15 +507,29 @@ const displayPagination = ({ isTop } = {}) => {
           .join("")}
         <li><button class="page-button" onclick="changePage(${
           currentPage + 1
-        })" ${currentPage === data.length ? "disabled" : ""}>&gt;</button></li>
+        })" ${currentPage === totalPages ? "disabled" : ""}>&gt;</button></li>
       </ul>
     `;
 };
 
 const renderTable = () => {
-  const table = data[currentPage - 1]
-    .map(
-      ({ pageLink, pageTitle, images }, webPageIndex) => `
+  const table = data[pageIndex]
+    .map(({ pageLink, pageTitle, images, error }, webPageIndex) => {
+      if (error)
+        return `
+        <table style="border-collapse: collapse; margin-bottom: 40px; table-layout: fixed; width: 100%; max-width: 1258px;">
+          <caption style="border-radius: 6px 6px 0 0; text-align: left;">
+              <div style="margin-bottom: 6px">
+                ${error}
+              </div>
+              <div>
+                <span style="font-weight: 600">Page URL: </span><a rel="noreferrer" href=${pageLink} target="_blank">${pageLink}</a>
+              </div>
+          </caption>
+        </table>
+        `;
+
+      return `
         <table style="border-collapse: collapse; margin-bottom: 40px; table-layout: fixed;">
             <caption style="border-radius: 6px 6px 0 0; text-align: left;">
                 <div style="margin-bottom: 6px">
@@ -477,20 +611,20 @@ const renderTable = () => {
                         <td>
                             <input style="display: block; margin: auto" type="checkbox" ${
                               isChecked ? "checked" : ""
-                            } onchange="onChangeHandler(this, ${webPageIndex}, ${imageIndex})" />
+                            } onchange="onCheckedHandler(this, ${webPageIndex}, ${imageIndex})" />
                         </td>
                     </tr>
                 `
                   )
                   .join("")}
             </tbody>
-        </table>`
-    )
+        </table>`;
+    })
     .join("");
 
   document.body.innerHTML = `
     ${displayPagination({ isTop: true })}
-    <div style="width: fit-content; margin: 0 auto; padding: 40px 16px 0">
+    <div style="width: fit-content; margin: 0 auto; padding: 40px 16px 0;">
       ${table}
     </div>
     ${displayPagination()}
@@ -508,8 +642,7 @@ const renderTable = () => {
   window.saveNoteHandler = (button, webPageIndex, imageIndex) => {
     const note = document.getElementById(`note-${webPageIndex}-${imageIndex}`);
 
-    data[currentPage - 1][webPageIndex].images[imageIndex].note =
-      note.innerHTML;
+    data[pageIndex][webPageIndex].images[imageIndex].note = note.innerHTML;
 
     dispatchTableDataChange();
 
@@ -523,7 +656,7 @@ const renderTable = () => {
       `table-row-${webPageIndex}-${imageIndex}`
     );
 
-    const currentImage = data[currentPage - 1][webPageIndex].images[imageIndex];
+    const currentImage = data[pageIndex][webPageIndex].images[imageIndex];
     const isFailed = !currentImage.isFailed;
     const { isChecked } = currentImage;
     currentImage.isFailed = isFailed;
@@ -539,9 +672,9 @@ const renderTable = () => {
     button.textContent = isFailed ? unmarkFailedButtonText : failedButtonText;
   };
 
-  window.onChangeHandler = (element, webPageIndex, imageIndex) => {
+  window.onCheckedHandler = (element, webPageIndex, imageIndex) => {
     const isChecked = element.checked;
-    const currentImage = data[currentPage - 1][webPageIndex].images[imageIndex];
+    const currentImage = data[pageIndex][webPageIndex].images[imageIndex];
     currentImage.isChecked = isChecked;
 
     const tableRow = document.getElementById(
@@ -567,6 +700,42 @@ const renderTable = () => {
   };
 };
 
+const getBackgroundFetchIndex = () => {
+  const nextEmptyIndex = data.findIndex((element) => !element);
+
+  if (nextEmptyIndex > 0) {
+    return nextEmptyIndex;
+  }
+
+  if (data.length < links.length) {
+    return data.length;
+  }
+};
+
+const backgroundFetching = async () => {
+  await delay(5000);
+
+  if (changePagePromise) {
+    await changePagePromise;
+    await delay(1000);
+  }
+
+  const backgroundFetchIndex = getBackgroundFetchIndex();
+
+  if (!backgroundFetchIndex) {
+    return;
+  }
+
+  backgroundFetchPromise = getImagesData(backgroundFetchIndex, {
+    isBackgroundFetch: true,
+  });
+
+  await backgroundFetchPromise;
+
+  backgroundFetchPromise = null;
+  backgroundFetching();
+};
+
 const useSiteMap = async () => {
   const relativeLinks = Array.from(
     document.querySelectorAll("a[href^='/']")
@@ -576,21 +745,25 @@ const useSiteMap = async () => {
     document.querySelectorAll(`a[href^='https://${host}']`)
   ).map(({ href }) => href);
 
-  const links = Array.from(new Set([...relativeLinks, ...absoluteLinks]));
+  links = chunkArray(Array.from(new Set([...relativeLinks, ...absoluteLinks])));
 
-  await getImagesData(links);
+  const cachedPage = getCachedPage();
 
-  const page = document
-    .querySelector("script[table-page]")
-    ?.getAttribute("table-page");
-
-  if (page) {
-    currentPage = +page;
+  if (cachedPage) {
+    updatePage(cachedPage);
   }
 
+  const cachedData = getCachedImagesData();
+
+  if (cachedData) {
+    data = cachedData;
+  }
+
+  await getImagesData();
   renderHeadStyles();
   renderTable();
   dispatchTableRendered();
+  backgroundFetching();
 };
 
 const usePage = () => {

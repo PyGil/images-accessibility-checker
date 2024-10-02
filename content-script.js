@@ -28,7 +28,6 @@ document.addEventListener("onPageChange", ({ detail: { page } }) => {
   });
 });
 
-
 chrome.storage.local.remove(generalStateKey);
 
 const customStyles = `

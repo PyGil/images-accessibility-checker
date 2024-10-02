@@ -81,7 +81,7 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       return;
     }
 
-    if (action) {
+    if (action && data) {
       buttonsState[action]?.setActive();
     }
   });
